@@ -537,8 +537,11 @@ class Customer(StripeObject):
             charge_immediately=charge_immediately
         )
 
-    def subscribe(self, plan, quantity=None, trial_days=None,
+    def subscribe(self, plan, quantity=None, trial_period=None, trial_days=None,
                   charge_immediately=True, token=None):
+        if trial_period and trial_days:
+            raise Exception("Invalid arguments: can't specify both trial_period and trial_days")
+
         if quantity is None:
             if PLAN_QUANTITY_CALLBACK is not None:
                 quantity = PLAN_QUANTITY_CALLBACK(self)
@@ -547,7 +550,10 @@ class Customer(StripeObject):
         cu = self.stripe_customer
 
         subscription_params = {}
-        if trial_days:
+        if trial_period:
+            subscription_params["trial_end"] = \
+                datetime.datetime.utcnow() + trial_period
+        elif trial_days:
             subscription_params["trial_end"] = \
                 datetime.datetime.utcnow() + datetime.timedelta(days=trial_days)
         if token:
