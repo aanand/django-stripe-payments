@@ -165,6 +165,8 @@ class Event(StripeObject):
                     self.link_customer()
                 if self.kind.startswith("invoice."):
                     Invoice.handle_event(self)
+                if self.kind.startswith("invoiceitem."):
+                    InvoiceItem.handle_event(self)
                 elif self.kind.startswith("charge."):
                     if not self.customer:
                         self.link_customer()
@@ -795,6 +797,40 @@ class InvoiceItem(models.Model):
 
     def plan_display(self):
         return PAYMENTS_PLANS[self.plan]["name"]
+
+    @classmethod
+    def sync_from_stripe_data(cls, stripe_invoice_item):
+        invoice = Invoice.objects.get(stripe_id=stripe_invoice_item.invoice)
+
+        inv_item, inv_item_created = invoice.items.get_or_create(
+            stripe_id=stripe_invoice_item.id,
+            defaults=dict(
+                amount=(stripe_invoice_item.amount / decimal.Decimal("100")),
+                currency=stripe_invoice_item.currency,
+                proration=stripe_invoice_item.proration,
+                description=stripe_invoice_item.description or "",
+
+                # FIXME: period_start and period_end should be nullable.
+                # (invoice items don't always have them)
+                period_start=invoice.period_start,
+                period_end=invoice.period_end
+            )
+        )
+
+        if not inv_item_created:
+            inv_item.amount = (stripe_invoice_item.amount / decimal.Decimal("100"))
+            inv_item.currency = stripe_invoice_item.currency
+            inv_item.proration = stripe_invoice_item.proration
+            inv_item.description = stripe_invoice_item.description or ""
+            inv_item.save()
+
+    @classmethod
+    def handle_event(cls, event):
+        valid_events = ["invoiceitem.created"]
+        if event.kind in valid_events:
+            invoice_item_data = event.message["data"]["object"]
+            stripe_invoice_item = stripe.InvoiceItem.retrieve(invoice_item_data["id"])
+            cls.sync_from_stripe_data(stripe_invoice_item)
 
 
 class Charge(StripeObject):
