@@ -691,6 +691,14 @@ class Invoice(models.Model):
             return "Paid"
         return "Open"
 
+    def add_item(self, **kwargs):
+        """
+        Create an InvoiceItem for this invoice. Attributes specifed as **kwargs.
+        """
+        attributes = dict(customer=self.customer.stripe_id, invoice=self.stripe_id)
+        attributes.update(kwargs)
+        stripe.InvoiceItem.create(**attributes)
+
     @classmethod
     def sync_from_stripe_data(cls, stripe_invoice, send_receipt=True):
         c = Customer.objects.get(stripe_id=stripe_invoice["customer"])
